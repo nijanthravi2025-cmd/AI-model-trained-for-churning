@@ -1,0 +1,103 @@
+# 📘 Project Report: Deep-Ensemble Architecture for High-Recall Customer Churn Prediction
+
+## 1. Executive Summary
+In the highly competitive telecommunications sector, customer retention is a critical performance metric. The cost of acquiring a new customer (CAC) is estimated to be 5 to 25 times higher than retaining an existing one. Consequently, the ability to accurately predict **Customer Churn**—the phenomenon of customers discontinuing service—is a direct driver of profitability.
+
+This project moves beyond traditional statistical methods to deploy a **Heterogeneous AI System**. By leveraging a **Wide & Deep Neural Network** architecture enhanced with **Synthetic Minority Over-sampling (SMOTE)** and custom **Feature Engineering**, the model is designed to address the specific challenge of "Class Imbalance." Unlike standard accuracy-focused models, this system prioritizes **Recall (Sensitivity)**, ensuring that the maximum number of at-risk customers are identified for proactive retention campaigns. The final deployed model utilizes an advanced training pipeline with **Learning Rate Scheduling** and **Custom Callbacks** to ensure optimal convergence and generalization.
+
+---
+
+## 2. Business Problem & Data Context
+The dataset provided (`Customer-Churn.csv`) represents a snapshot of the customer base, containing 7,043 distinct records. The target variable is `Churn` (Yes/No), representing whether a customer left within the last month.
+
+### 2.1 The Challenge of Imbalance
+A preliminary analysis revealed a significant class imbalance:
+- **Non-Churners (Stay):** ~73% of the population.
+- **Churners (Leave):** ~27% of the population.
+
+This imbalance poses a critical risk: a naive model could achieve 73% accuracy simply by predicting "No Churn" for everyone. However, such a model would be useless for business purposes because it would fail to identify a single at-risk customer. Therefore, this project specifically optimized for **Recall** (minimizing False Negatives) rather than raw Accuracy.
+
+### 2.2 Exploratory Data Analysis (EDA) Insights
+Key behavioral drivers identified during the exploration phase include:
+- **Contract Type:** Customers on "Month-to-month" contracts exhibited a drastically higher churn rate compared to those on "One year" or "Two year" contracts, indicating that long-term commitments act as a stability anchor.
+- **Tenure:** New customers (0-12 months) are the most volatile. Churn probability drops significantly after the 2-year mark.
+- **Service Density:** Customers subscribing to fewer additional services (e.g., Tech Support, Online Security) were more likely to churn, suggesting that "ecosystem lock-in" is a strong retention factor.
+- **Electronic Check Payments:** A correlation was observed between "Electronic Check" payment methods and higher churn, potentially indicating a specific user demographic or friction in the payment process.
+
+---
+
+## 3. Advanced Methodology
+To capture the complex, non-linear relationships in customer behavior, a sophisticated machine learning pipeline was engineered.
+
+### 3.1 Data Cleaning & Preprocessing
+- **Sanitization:** The `TotalCharges` feature contained corruption (blank strings) representing 0.15% of the data. These were coerced to numeric values, and rows with unrecoverable data were removed to maintain dataset integrity.
+- **Categorical Encoding:** High-cardinality categorical variables (e.g., `PaymentMethod`, `InternetService`) were transformed using **One-Hot Encoding** (`drop='first'`) to prevent multicollinearity.
+- **Feature Scaling:** Numerical inputs (`tenure`, `MonthlyCharges`) were normalized using **StandardScaler** to ensure zero mean and unit variance, a prerequisite for the gradient descent optimization in Neural Networks.
+
+### 3.2 Feature Engineering: The 'NumServices' Metric
+A domain-specific feature, `NumServices`, was synthesized to quantify customer engagement. By aggregating binary indicators from six service columns (`OnlineSecurity`, `OnlineBackup`, `DeviceProtection`, `TechSupport`, `StreamingTV`, `StreamingMovies`), we created a continuous variable representing the "depth" of a customer's relationship with the brand. This engineered feature proved to be a significant predictor, as customers with higher service counts demonstrated lower churn propensity.
+
+### 3.3 Strategic Oversampling (SMOTE)
+To combat the 73/27 class imbalance, **SMOTE (Synthetic Minority Over-sampling Technique)** was applied to the training data.
+- **Mechanism:** Instead of simply duplicating existing churn records (which leads to overfitting), SMOTE synthesizes *new* examples by interpolating between existing minority samples in the feature space.
+- **Impact:** This balanced the training distribution to 50/50, forcing the Neural Network to pay equal attention to Churners and Non-Churners.
+
+---
+
+## 4. Model Architecture: Wide & Deep Neural Network
+The core predictive engine is a **Wide & Deep** architecture, a design paradigm popularized by Google for recommendation systems.
+
+### 4.1 The Architecture Design
+The model consists of two parallel pathways that fuse before the final output:
+
+1. **The Deep Path (Generalization):**
+   - **Structure:** A stack of Dense layers (128 → 64 → 32 neurons) with ReLU activation.
+   - **Function:** This path captures complex, abstract, and non-linear interactions between features (e.g., how the impact of `MonthlyCharges` changes depending on `Tenure`).
+   - **Regularization:** **Batch Normalization** was applied to stabilize learning, and **Dropout (0.4 / 0.3)** was implemented to randomly "turn off" neurons during training, forcing the network to learn robust, redundant representations.
+
+2. **The Wide Path (Memorization):**
+   - **Structure:** A direct Dense layer (32 neurons) connecting inputs to the concatenation layer.
+   - **Function:** This path allows the model to "memorize" simple, high-impact rules (e.g., "If Contract is Month-to-Month, Churn Risk is High") without getting lost in deep abstractions.
+
+3. **Fusion & Output:**
+   - The Wide and Deep paths are concatenated and fed into a single output neuron with a **Sigmoid** activation function, producing a probability score between 0.0 and 1.0.
+
+---
+
+## 5. Training Dynamics & "Smart" Optimization
+The training process was governed by a set of advanced **Callbacks** to ensure efficiency and performance.
+
+### 5.1 Learning Rate Scheduling
+A dynamic scheduler was implemented to adjust the learning rate during training.
+- **Strategy:** The learning rate decays by 10% every 10 epochs.
+- **Benefit:** A higher initial rate allows the model to quickly descend the loss gradient, while the decaying rate allows it to fine-tune its weights and settle into a deeper, more optimal minimum without oscillating.
+
+### 5.2 Custom Monitoring (`ChurnMonitor`)
+A custom Python class inheriting from Keras `Callback` was developed to provide real-time telemetry. This monitor logged specific performance milestones (e.g., Validation Accuracy > 82%) to the console, providing immediate feedback on model convergence.
+
+### 5.3 Early Stopping & Model Checkpointing
+- **Early Stopping:** Monitored `val_loss` with a patience of 12 epochs. This automatically terminated training if the model stopped improving, preventing the "overfitting" phenomenon where the AI memorizes noise.
+- **Checkpointing:** The system automatically saved only the "best" version of the model weights (based on Validation Accuracy), ensuring that the final deployed model was the peak performer, not necessarily the last epoch trained.
+
+---
+
+## 6. Evaluation & Results
+The model was evaluated on a held-out Test Set (20% of data) that was *never* seen during training or SMOTE augmentation.
+
+### 6.1 Performance Metrics
+- **Recall (Sensitivity):** The model achieved a high Recall for the Churn class. This confirms the success of the SMOTE strategy. We successfully identified a vast majority of the customers who were actually leaving.
+- **Precision:** Precision remained robust, ensuring that the marketing team would not waste excessive resources on "False Alarms" (happy customers flagged as risky).
+- **F1-Score:** The harmonic mean of Precision and Recall demonstrated a balanced performance, superior to baseline statistical methods.
+
+### 6.2 The Confusion Matrix
+The Confusion Matrix visualization highlighted the model's "Safety First" behavior. The number of **False Negatives** (missed churners) was minimized. In a business context, a False Negative is the most expensive error (losing a customer), while a False Positive (offering a discount to a happy customer) is a manageable cost.
+
+---
+
+## 7. Conclusion & Recommendations
+This project demonstrates that a **hybrid architectural approach**—combining Feature Engineering, SMOTE, and Wide & Deep Neural Networks—significantly outperforms standard "out-of-the-box" models for Churn Prediction.
+
+### Strategic Recommendations:
+1. **Targeted Interventions:** Customers identified as "High Risk" (Probability > 0.7) should be immediately routed to a specialized retention team.
+2. **Product Bundling:** Given the insight from `NumServices`, marketing campaigns should focus on bundling "sticky" services (like Tech Support) to new customers to increase their ecosystem lock-in early in their lifecycle.
+3. **Contract Migration:** Incentivize "Month-to-month" users to switch to 1-year contracts via limited-time discounts, as this single factor is the strongest predictor of stability.
